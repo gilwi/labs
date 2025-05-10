@@ -16,38 +16,6 @@ This project sets up a local Apache Kafka environment for experimentation using 
 
 ```bash
 docker compose up --build -d
-```
-
-Here’s a **basic README** for your Docker Compose Kafka lab project. It includes:
-
-* How to run the stack
-* How to reset all resources
-* URLs to access Kafka UI
-* Notes on using `kcat`, producer, and consumer
-
----
-
-### 📘 README.md
-
-````markdown
-# 🧪 Kafka Lab with Docker Compose
-
-This project sets up a local Apache Kafka environment for experimentation using Docker Compose. It includes:
-
-- Apache Kafka broker
-- Kafka UI (Kafka-UI)
-- A CLI container (kcat) to test topics
-- A Python-based producer and consumer
-- Automatic topic creation and data streaming
-
----
-
-## 🚀 Getting Started
-
-### Start all containers
-
-```bash
-docker compose up --build -d
 ````
 
 This will spin up:
