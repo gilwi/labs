@@ -67,7 +67,7 @@ services:
       ES_USERNAME: elastic
       ES_PASSWORD: elastic
       ES_USE_SSL: "true" # Using HTTP for local dev is simpler
-      ES_INDEX: kafka-payments-1
+      ES_INDEX: kafka-payments
     networks:
       - kafka-net
     deploy:

@@ -29,7 +29,7 @@ KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka-node")
 KAFKA_PORT = int(os.getenv("KAFKA_PORT", "9092"))
 TOPIC_NAME = os.getenv("TOPIC_NAME", "payments")
 GROUP_ID = os.getenv("GROUP_ID", "payments-group")
-CONSUMER_ID = os.uname()[1][:1]
+CONSUMER_ID = os.uname()[1]
 # CONSUMER_ID = os.getenv("CONSUMER_ID", "unknown")
 
 # Configurable settings - Elasticsearch
@@ -158,7 +158,7 @@ def ensure_es_index(
                         "kafka_timestamp": {"type": "date"},
                         "ingest_timestamp": {"type": "date"},
                         "message": {"type": "text"},
-                        "message_json": {"type": "object", "enabled": False},
+                        "message_json": {"type": "object", "enabled": True},
                     }
                 },
             }
