@@ -29,7 +29,8 @@ KAFKA_HOST = os.getenv("KAFKA_HOST", "kafka-node")
 KAFKA_PORT = int(os.getenv("KAFKA_PORT", "9092"))
 TOPIC_NAME = os.getenv("TOPIC_NAME", "payments")
 GROUP_ID = os.getenv("GROUP_ID", "payments-group")
-CONSUMER_ID = os.getenv("CONSUMER_ID", "unknown")
+CONSUMER_ID = os.uname()[1][:1]
+# CONSUMER_ID = os.getenv("CONSUMER_ID", "unknown")
 
 # Configurable settings - Elasticsearch
 ES_HOST = os.getenv("ES_HOST", "elastic-node")

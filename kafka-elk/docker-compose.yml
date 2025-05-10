@@ -54,14 +54,14 @@ services:
     networks:
       - kafka-net
 
-  consumer1:
-    container_name: consumer1-node
+  consumer:
+    # container_name: consumer1-node
     build: ./consumer
     depends_on:
       - kafka
       - elastic
     environment:
-      CONSUMER_ID: 1
+      # CONSUMER_ID: 1
       ES_HOST: elastic-node
       ES_PORT: 9200
       ES_USERNAME: elastic
@@ -70,40 +70,9 @@ services:
       ES_INDEX: kafka-payments-1
     networks:
       - kafka-net
-
-  consumer2:
-    container_name: consumer2-node
-    build: ./consumer
-    depends_on:
-      - kafka
-      - elastic
-    environment:
-      CONSUMER_ID: 2
-      ES_HOST: elastic-node
-      ES_PORT: 9200
-      ES_USERNAME: elastic
-      ES_PASSWORD: elastic
-      ES_USE_SSL: "true"
-      ES_INDEX: kafka-payments-2
-    networks:
-      - kafka-net
-
-  consumer3:
-    container_name: consumer3-node
-    build: ./consumer
-    depends_on:
-      - kafka
-      - elastic
-    environment:
-      CONSUMER_ID: 3
-      ES_HOST: elastic-node
-      ES_PORT: 9200
-      ES_USERNAME: elastic
-      ES_PASSWORD: elastic
-      ES_USE_SSL: "true"
-      ES_INDEX: kafka-payments-3
-    networks:
-      - kafka-net
+    deploy:
+      mode: replicated
+      replicas: 3
 
   setup:
     container_name: setup-node

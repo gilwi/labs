@@ -66,4 +66,4 @@ if __name__ == "__main__":
         payment = generate_payment()
         producer.send(TOPIC_NAME, payment)
         logging.info(f"📤 Sent: {payment}")
-        time.sleep(0.1)
+        time.sleep(1)
