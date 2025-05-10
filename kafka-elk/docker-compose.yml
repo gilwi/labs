@@ -18,9 +18,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
+    networks:
+      - kafka-net
 
   kafka-ui:
-    container_name: kafka-ui
+    container_name: kafka-ui-node
     image: provectuslabs/kafka-ui:v0.7.2
     ports:
       - "8080:8080"
@@ -30,28 +32,208 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS: kafka-node:9092
     depends_on:
       - kafka
+    networks:
+      - kafka-net
 
   kcat:
-    container_name: kcat
+    container_name: kcat-node
     image: confluentinc/cp-kcat
     entrypoint: ["/bin/bash"]
     tty: true
     depends_on:
       - kafka
+    networks:
+      - kafka-net
 
   producer:
-    container_name: producer
+    container_name: producer-node
     build:
       context: ./producer
     depends_on:
       - kafka
+    networks:
+      - kafka-net
 
-  consumer:
-    container_name: consumer
-    build:
-      context: ./consumer
+  consumer1:
+    container_name: consumer1-node
+    build: ./consumer
     depends_on:
       - kafka
+      - elastic
+    environment:
+      CONSUMER_ID: 1
+      ES_HOST: elastic-node
+      ES_PORT: 9200
+      ES_USERNAME: elastic
+      ES_PASSWORD: elastic
+      ES_USE_SSL: "true" # Using HTTP for local dev is simpler
+      ES_INDEX: kafka-payments-1
+    networks:
+      - kafka-net
+
+  consumer2:
+    container_name: consumer2-node
+    build: ./consumer
+    depends_on:
+      - kafka
+      - elastic
+    environment:
+      CONSUMER_ID: 2
+      ES_HOST: elastic-node
+      ES_PORT: 9200
+      ES_USERNAME: elastic
+      ES_PASSWORD: elastic
+      ES_USE_SSL: "true"
+      ES_INDEX: kafka-payments-2
+    networks:
+      - kafka-net
+
+  consumer3:
+    container_name: consumer3-node
+    build: ./consumer
+    depends_on:
+      - kafka
+      - elastic
+    environment:
+      CONSUMER_ID: 3
+      ES_HOST: elastic-node
+      ES_PORT: 9200
+      ES_USERNAME: elastic
+      ES_PASSWORD: elastic
+      ES_USE_SSL: "true"
+      ES_INDEX: kafka-payments-3
+    networks:
+      - kafka-net
+
+  setup:
+    container_name: setup-node
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+    user: "0"
+    command: >
+      bash -c '
+        if [ x${ELASTIC_PASSWORD} == x ]; then
+          echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
+          exit 1;
+        elif [ x${KIBANA_PASSWORD} == x ]; then
+          echo "Set the KIBANA_PASSWORD environment variable in the .env file";
+          exit 1;
+        fi;
+        if [ ! -f config/certs/ca.zip ]; then
+          echo "Creating CA";
+          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
+          unzip config/certs/ca.zip -d config/certs;
+        fi;
+        if [ ! -f config/certs/certs.zip ]; then
+          echo "Creating certs";
+          echo -ne \
+          "instances:\n"\
+          "  - name: elastic-node\n"\
+          "    dns:\n"\
+          "      - elastic-node\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          > config/certs/instances.yml;
+          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+          unzip config/certs/certs.zip -d config/certs;
+        fi;
+        echo "Setting file permissions"
+        chown -R root:root config/certs;
+        find . -type d -exec chmod 750 \{\} \;;
+        find . -type f -exec chmod 640 \{\} \;;
+        echo "Waiting for Elasticsearch availability";
+        until curl -s --cacert config/certs/ca/ca.crt https://elastic-node:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
+        echo "Setting kibana_system password";
+        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://elastic-node:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+        echo "All done!";
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f config/certs/elastic-node/elastic-node.crt ]"]
+      interval: 1s
+      timeout: 5s
+      retries: 120
+    networks:
+      - kafka-net
+
+  elastic:
+    container_name: elastic-node
+    depends_on:
+      setup:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - ${ES_PORT}:9200
+    environment:
+      node.name: elastic-node
+      cluster.name: ${CLUSTER_NAME}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      bootstrap.memory_lock: true
+      xpack.security.enabled: true
+      xpack.security.http.ssl.enabled: true
+      xpack.security.http.ssl.key: certs/elastic-node/elastic-node.key
+      xpack.security.http.ssl.certificate: certs/elastic-node/elastic-node.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca/ca.crt
+      discovery.type: single-node
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - kafka-net
+
+  kibana:
+    container_name: kibana-node
+    depends_on:
+      elastic:
+        condition: service_healthy
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/kibana/config/certs
+      - kibanadata:/usr/share/kibana/data
+    ports:
+      - ${KIBANA_PORT}:5601
+    environment:
+      SERVERNAME: kibana
+      ELASTICSEARCH_HOSTS: https://elastic-node:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD}
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: config/certs/ca/ca.crt
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - kafka-net
 
 volumes:
-  kafka-data:
+  certs:
+    driver: local
+  esdata:
+    driver: local
+  kibanadata:
+    driver: local
+
+networks:
+  kafka-net:
+    driver: bridge
