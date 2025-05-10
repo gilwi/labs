@@ -1,65 +1,65 @@
-from kafka import KafkaConsumer, KafkaAdminClient
-from kafka.errors import NoBrokersAvailable, KafkaError, UnknownTopicOrPartitionError
-import json
 import time
 import logging
-
-KAFKA_HOST = 'kafka-node:9092'
-TOPIC_NAME = 'payments'
-GROUP_ID = 'payment-consumers'
+from kafka import KafkaConsumer, TopicPartition
+from kafka.errors import KafkaError
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+TOPIC = "payments"
+BOOTSTRAP_SERVERS = ["kafka-node:9092"]
+GROUP_ID = "payment-consumers"
+RETRY_DELAY = 5  # seconds
 
 def wait_for_kafka():
-    """Wait for Kafka broker to become available."""
-    while True:
-        try:
-            admin = KafkaAdminClient(bootstrap_servers=KAFKA_HOST)
-            logging.info("✅ Kafka is available.")
-            return admin
-        except NoBrokersAvailable:
-            logging.warning("🕒 Waiting for Kafka broker...")
-            time.sleep(3)
-
-def wait_for_topic(admin):
-    """Wait until the specified topic exists."""
-    while True:
-        try:
-            topics = admin.list_topics()
-            if TOPIC_NAME in topics:
-                logging.info(f"✅ Topic '{TOPIC_NAME}' is available.")
-                return
-            logging.warning(f"⏳ Waiting for topic '{TOPIC_NAME}'...")
-            time.sleep(3)
-        except KafkaError as e:
-            logging.warning(f"Kafka error: {e}")
-            time.sleep(3)
-
-def start_consumer():
-    """Start the Kafka consumer."""
+    """Wait until Kafka is reachable and topic is available."""
     while True:
         try:
             consumer = KafkaConsumer(
-                TOPIC_NAME,
-                bootstrap_servers=KAFKA_HOST,
-                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                bootstrap_servers=BOOTSTRAP_SERVERS,
+                group_id=GROUP_ID,
                 auto_offset_reset='earliest',
                 enable_auto_commit=True,
-                group_id=GROUP_ID,
-                session_timeout_ms=30000,
-                heartbeat_interval_ms=10000
+                consumer_timeout_ms=1000,
             )
-            logging.info("🚀 Consumer started and listening for messages...")
-            for message in consumer:
-                logging.info(f"📥 Received: {message.value}")
-        except UnknownTopicOrPartitionError:
-            logging.warning("❗ Topic not ready yet. Retrying...")
-            time.sleep(3)
+
+            # Force metadata refresh
+            logger.info("🔄 Refreshing metadata...")
+            topics = consumer.topics()
+            if TOPIC not in topics:
+                logger.warning(f"❌ Topic '{TOPIC}' not found. Retrying...")
+                consumer.close()
+                time.sleep(RETRY_DELAY)
+                continue
+
+            logger.info(f"✅ Connected to Kafka. Topic '{TOPIC}' is available.")
+            return consumer
+
         except KafkaError as e:
-            logging.error(f"Kafka error: {e}")
-            time.sleep(3)
+            logger.error(f"❗ Kafka not ready: {e}. Retrying in {RETRY_DELAY}s...")
+            time.sleep(RETRY_DELAY)
+
+def consume_messages(consumer):
+    """Poll messages from the topic and print them."""
+    logger.info("🚀 Consumer started and listening for messages...")
+
+    # Optional: directly assign to partition 0 (remove if you want group balancing)
+    # consumer.assign([TopicPartition(TOPIC, 0)])
+
+    try:
+        while True:
+            logger.info("⏳ Polling Kafka...")
+            msg_pack = consumer.poll(timeout_ms=1000)
+            for tp, messages in msg_pack.items():
+                for msg in messages:
+                    logger.info(f"📥 Received: {msg.value.decode('utf-8')}")
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        logger.info("👋 Stopping consumer.")
+    finally:
+        consumer.close()
 
 if __name__ == "__main__":
-    admin = wait_for_kafka()
-    wait_for_topic(admin)
-    start_consumer()
+    consumer = wait_for_kafka()
+    consume_messages(consumer)

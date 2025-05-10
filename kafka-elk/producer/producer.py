@@ -26,7 +26,7 @@ def wait_for_kafka():
 
 # Create topic if it doesn't exist
 def create_topic(admin):
-    topic = NewTopic(name=TOPIC_NAME, num_partitions=1, replication_factor=1)
+    topic = NewTopic(name=TOPIC_NAME)
     try:
         admin.create_topics([topic])
         logging.info(f"✅ Topic '{TOPIC_NAME}' created")
