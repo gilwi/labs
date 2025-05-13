@@ -1,0 +1,127 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Add IP address of all hosts to all hosts
+      lineinfile:
+        dest: /etc/hosts
+        regexp: '.*{{ item }}$'
+        line: "{{ hostvars[item].ansible_host }} {{item}}"
+        state: present
+      when: hostvars[item].ansible_host is defined
+      with_items: "{{ groups.all }}"
+
+- hosts: all
+  become: yes
+  tasks:
+
+    - name: Download netdata installer
+      get_url:
+        url: https://my-netdata.io/kickstart-static64.sh
+        dest: /opt/kickstart.sh
+        mode: '0700'
+
+    - name: install netdata
+      shell: bash /opt/kickstart.sh --non-interactive
+      args:
+        creates: /opt/netdata
+
+    - name: Configure graphite exporter
+      copy:
+        dest: "/opt/netdata/etc/netdata/exporting.conf"
+        content: |
+          [exporting:global]
+              enabled = yes
+              hostname = {{ inventory_hostname }}
+      notify: Restart netdata
+
+  handlers:
+    - name: Restart netdata
+      systemd:
+        name: netdata
+        state: restarted
+
+- hosts: prometheus
+  become: yes
+  vars:
+
+  tasks:
+
+    - name: Add grafana repo
+      yum_repository:
+        name: grafana
+        description: Grafana repo
+        baseurl: https://packages.grafana.com/oss/rpm
+        repo_gpgcheck: yes
+        gpgcheck: yes
+        gpgkey: https://packages.grafana.com/gpg.key
+        sslverify: yes
+        sslcacert: /etc/pki/tls/certs/ca-bundle.crt
+
+    - name: Install grafana
+      package:
+        name: grafana
+        state: present
+      notify: Restart grafana-server
+
+    - name: Create prometheus user with home directory
+      user: 
+        name: prometheus
+        shell: /bin/false
+        home: /opt/prometheus
+        createhome: yes 
+        comment: 'Created by Ansible'
+
+    - name: Unarchive prometheus sources
+      unarchive:
+        src: https://github.com/prometheus/prometheus/releases/download/v2.31.0-rc.0/prometheus-2.31.0-rc.0.linux-amd64.tar.gz
+        dest: /opt/prometheus
+        exclude: /opt/prometheus/prometheus.yml
+        remote_src: yes
+        owner: prometheus
+        group: prometheus
+        extra_opts:
+        - --strip=1
+
+    - name: Configure prometheus unit file
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        content: |
+          [Unit]
+          Description=Prometheus Server
+          AssertPathExists=/opt/prometheus
+
+          [Service]
+          Type=simple
+          WorkingDirectory=/opt/prometheus
+          User=prometheus
+          Group=prometheus
+          ExecStart=/opt/prometheus/prometheus --config.file=/opt/prometheus/prometheus.yml --log.level=info
+          ExecReload=/bin/kill -SIGHUP $MAINPID
+          ExecStop=/bin/kill -SIGINT $MAINPID
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart prometheus
+
+    - name: Configure prometheus
+      template:
+        src: templates/prometheus.yml.j2
+        dest: /opt/prometheus/prometheus.yml
+      notify: Restart prometheus
+
+  handlers:
+    - name: Restart prometheus
+      systemd:
+        name: prometheus
+        enabled: yes
+        state: restarted
+        daemon_reload: yes
+
+    - name: Restart grafana-server
+      systemd:
+        name: grafana-server
+        enabled: yes
+        state: restarted
+        daemon_reload: yes
+

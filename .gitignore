@@ -1,0 +1,4 @@
+.ropeproject/
+.vagrant/
+*.retry
+.env
